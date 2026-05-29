@@ -220,6 +220,7 @@ class NotebookLMClient:
         if ('[["e",4' in response.text or '["e",4' in response.text) and f'"{rpc_id}"' not in response.text:
             print("\n❌ 身份凭证已失效（Google 会话已过期或已被注销）！")
             print("💡 请重新在 Chrome 浏览器中登录 NotebookLM，打开 F12 复制最新的 Cookie 并更新到 'cookie.txt' 中。")
+            raise PermissionError("❌ Google 登录会话已过期或被注销，请更新 cookie.txt 中的 Cookie。")
                 
         return response
 

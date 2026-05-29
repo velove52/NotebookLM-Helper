@@ -213,7 +213,7 @@ class NotebookLMUploaderClient:
                 "refresh_token": refresh_token,
                 "grant_type": "refresh_token"
             }
-            res = requests.post("https://oauth2.googleapis.com/token", data=payload, timeout=10)
+            res = self.session.post("https://oauth2.googleapis.com/token", data=payload, timeout=10)
             if res.status_code == 200:
                 data = res.json()
                 new_access_token = data.get("access_token")
@@ -252,7 +252,7 @@ class NotebookLMUploaderClient:
             params["pageToken"] = page_token
             
         try:
-            res = requests.get(url, headers=headers, params=params, verify=False, timeout=15)
+            res = self.session.get(url, headers=headers, params=params, verify=False, timeout=15)
             if res.status_code == 200:
                 return res.json().get("files", [])
             else:
@@ -274,7 +274,7 @@ class NotebookLMUploaderClient:
         
         # 首先检查文件的大小，以便于进度显示
         try:
-            meta_res = requests.get(url, headers=headers, params={"fields": "size,name"}, verify=False, timeout=10)
+            meta_res = self.session.get(url, headers=headers, params={"fields": "size,name"}, verify=False, timeout=10)
             if meta_res.status_code != 200:
                 print(f"❌ 获取文件元数据失败: {meta_res.status_code}")
                 return False
@@ -290,7 +290,7 @@ class NotebookLMUploaderClient:
         
         download_url = f"{url}?alt=media"
         try:
-            with requests.get(download_url, headers=headers, stream=True, verify=False, timeout=60) as r:
+            with self.session.get(download_url, headers=headers, stream=True, verify=False, timeout=60) as r:
                 if r.status_code != 200:
                     print(f" ❌ 下载失败 (HTTP {r.status_code})")
                     return False
@@ -345,6 +345,7 @@ class NotebookLMUploaderClient:
         if ('[["e",4' in response.text or '["e",4' in response.text) and f'"{rpc_id}"' not in response.text:
             print("\n❌ 身份凭证已失效（Google 会话已过期或已被注销）！")
             print("💡 请重新在浏览器中登录 NotebookLM 并更新 'cookie.txt'。")
+            raise PermissionError("❌ Google 登录会话已过期或被注销，请更新 cookie.txt 中的 Cookie。")
                 
         return response
 

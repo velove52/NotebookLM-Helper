@@ -377,8 +377,8 @@ class NotebookLMClient:
         for idx, sid in enumerate(source_ids, start=1):
             print(f"[{idx}/{total}] 正在删除文件 ID: {sid} ...", end="", flush=True)
             
-            args = json.dumps([[[sid]], [2]])
-            response = self._execute_rpc_with_xsrf_retry(rpc_id, [args], source_path=source_path)
+            params = [[[sid]], [2]]
+            response = self._execute_rpc_with_xsrf_retry(rpc_id, params, source_path=source_path)
             
             if response.status_code == 200:
                 print(" ✅ 成功")

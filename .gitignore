@@ -20,6 +20,7 @@ env/
 config.json
 cookie.txt
 rclone.conf
+sync_ielts.py
 .env
 
 # Temp download folder

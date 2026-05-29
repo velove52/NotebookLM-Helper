@@ -13,14 +13,79 @@ An elegant, highly robust, and professional reverse-engineered suite designed to
 
 ---
 
-## 🗺️ Quick Navigation / 快速导航
+## 🗺️ Quick Document Switch / 快速文档切换
 
-- [🌐 English README](#-english-documentation)
-- [🇨🇳 中文说明文档](#-中文说明文档)
+> [!TIP]
+> Click the panels below to switch or expand/collapse your preferred language documentation.
+> 点击下方对应的面板，即可展开/收起或自由切换中英文文档。
 
 ---
 
-# 🌐 English Documentation
+<details open>
+<summary><b>🇨🇳 点击收起/展开：中文说明文档 (Chinese Documentation)</b></summary>
+<br />
+
+## ✨ 核心特性
+- **⚡ 坚不可摧的 Session 自愈**: 自动捕获并突破 Google 严格的会话安全检查。当发生 XSRF Token 过期或 400 拦截时，自动完成动态刷新并静默重试。
+- **🔄 极速 Fail-Fast 凭证诊断**: 智能拦截 Google 跨域 `["e", 4]` (会话失效/注销) 错误。拒绝静默失败，在发生失效的第一时间中断运行，并给出最精准的保姆级排障提示。
+- **📂 谷歌网盘原生 OAuth2 对接**: 基于安全通道的 Google Drive 集成。可实现谷歌 Docs、Slides、Sheets 的“云端免流量秒挂载”，并对 PDF、Docx、Markdown 等二进制文件进行 3阶段流式流控上传。
+- **📅 智能日期备份定位与一键同步 (`sync_ielts.py`)**: 专为自动化场景打造。自动扫描云端网盘（如 `openclaw`）下的最新日期文件夹，智能清空目标笔记本，并秒级重构导入全部最新语料。
+- **🔒 绝对的隐私与配置安全**: 预置了极致安全的 Git 规则，所有敏感配置文件（如 `cookie.txt`、`rclone.conf`、个人专属的 `sync_ielts.py`）已被配置为自动忽略，**绝不会意外提交至公开 GitHub 仓库**。
+
+---
+
+## 🚀 极速上手
+
+### 1. 环境与依赖安装
+克隆本项目到本地后，安装标准的网络支持库：
+```bash
+pip install requests urllib3 configparser
+```
+
+### 2. 身份凭证快速配置
+为了能够访问您的谷歌服务，请在项目根目录下配置以下两个私有文件：
+
+| 配置文件名 | 用途 | 获取与配置方法 |
+| :--- | :--- | :--- |
+| **`cookie.txt`** | 鉴权 NotebookLM | 浏览器打开并登录 [Google NotebookLM](https://notebooklm.google.com/)，按 **F12** ➡️ **网络(Network)**，复制任意请求的标头 `Cookie` 字符串（或导出 Cookies JSON 数组），粘贴进该文件保存。 |
+| **`rclone.conf`** | 鉴权 Google Drive | 将包含有 `[gdriver]` 以及 OAuth2 的 `client_id`, `client_secret` 和 `refresh_token` 的 rclone 配置文件放入项目根目录。 |
+
+---
+
+## 🎮 自动化与运行命令
+
+### A. 一键全自动同步与重建 (`sync_ielts.py`)
+专门针对 IELTS 等定期学习资料更新设计的自动化同步脚本。自动清空云端旧数据，并在云端网盘锁定最新日期文件夹一键重构：
+```bash
+python sync_ielts.py
+```
+
+### B. 交互式笔记本管理控制台 (`notebooklm_helper.py`)
+启动保姆级中文控制台，管理并批量挑选删除指定的旧文档源：
+```bash
+python notebooklm_helper.py
+```
+
+### C. 命令行与交互式极速上传器 (`notebooklm_uploader.py`)
+支持手动选择或编写脚本调用导入：
+```bash
+# 启动图形向导式交互菜单
+python notebooklm_uploader.py
+
+# 脚本化导入网页文章
+python notebooklm_uploader.py --to <笔记本ID> --url "https://example.com/article"
+
+# 3阶段流式上传本地大文件/PDF/Markdown
+python notebooklm_uploader.py --to <笔记本ID> --file "C:\docs\ielts-prep.pdf"
+```
+
+</details>
+
+---
+
+<details>
+<summary><b>🌐 Click to Expand/Collapse: English Documentation (英文说明文档)</b></summary>
+<br />
 
 ## ✨ Key Features
 - **⚡ Bulletproof Session Self-Healing**: Automatically catches Google's strict validation checks. Seamlessly intercepts short-lived XSRF token expiry and auto-updates dynamically on the fly.
@@ -76,63 +141,7 @@ python notebooklm_uploader.py --to <notebook-id> --url "https://example.com/arti
 python notebooklm_uploader.py --to <notebook-id> --file "C:\docs\ielts-prep.pdf"
 ```
 
----
-
-# 🇨🇳 中文说明文档
-
-## ✨ 核心特性
-- **⚡ 坚不可摧的 Session 自愈**: 自动捕获并突破 Google 严格的会话安全检查。当发生 XSRF Token 过期或 400 拦截时，自动完成动态刷新并静默重试。
-- **🔄 极速 Fail-Fast 凭证诊断**: 智能拦截 Google 跨域 `["e", 4]` (会话失效/注销) 错误。拒绝静默失败，在发生失效的第一时间中断运行，并给出最精准的保姆级排障提示。
-- **📂 谷歌网盘原生 OAuth2 对接**: 基于安全通道的 Google Drive 集成。可实现谷歌 Docs、Slides、Sheets 的“云端免流量秒挂载”，并对 PDF、Docx、Markdown 等二进制文件进行 3阶段流式流控上传。
-- **📅 智能日期备份定位与一键同步 (`sync_ielts.py`)**: 专为自动化场景打造。自动扫描云端网盘（如 `openclaw`）下的最新日期文件夹，智能清空目标笔记本，并秒级重构导入全部最新语料。
-- **🔒 绝对的隐私与配置安全**: 预置了极致安全的 Git 规则，所有敏感配置文件（如 `cookie.txt`、`rclone.conf`、个人专属的 `sync_ielts.py`）已被配置为自动忽略，**绝不会意外提交至公开 GitHub 仓库**。
-
----
-
-## 🚀 极速上手
-
-### 1. 环境与依赖安装
-克隆本项目到本地后，安装标准的网络支持库：
-```bash
-pip install requests urllib3 configparser
-```
-
-### 2. 身份凭证快速配置
-为了能够访问您的谷歌服务，请在项目根目录下配置以下两个私有文件：
-
-| 配置文件名 | 用途 | 获取与配置方法 |
-| :--- | :--- | :--- |
-| **`cookie.txt`** | 鉴权 NotebookLM | 浏览器打开并登录 [Google NotebookLM](https://notebooklm.google.com/)，按 **F12** ➡️ **网络(Network)**，复制任意请求的标头 `Cookie` 字符串（或导出 Cookies JSON 数组），粘贴进该文件保存。 |
-| **`rclone.conf`** | 鉴权 Google Drive | 将包含有 `[gdriver]` 以及 OAuth2 的 `client_id`, `client_secret` 和 `refresh_token` 的 rclone 配置文件放入项目根目录。 |
-
----
-
-## 🎮 自动化与运行命令
-
-### A. 一键全自动同步与重建 (`sync_ielts.py`)
-专门针对 IELTS 等定期学习资料更新设计的自动化同步脚本。自动清空云端旧数据，并在云端网盘锁定最新日期文件夹一键重构：
-```bash
-python sync_ielts.py
-```
-
-### B. 交互式笔记本管理控制台 (`notebooklm_helper.py`)
-启动保姆级中文控制台，管理并批量挑选删除指定的旧文档源：
-```bash
-python notebooklm_helper.py
-```
-
-### C. 命令行与交互式极速上传器 (`notebooklm_uploader.py`)
-支持手动选择或编写脚本调用导入：
-```bash
-# 启动图形向导式交互菜单
-python notebooklm_uploader.py
-
-# 脚本化导入网页文章
-python notebooklm_uploader.py --to <笔记本ID> --url "https://example.com/article"
-
-# 3阶段流式上传本地大文件/PDF/Markdown
-python notebooklm_uploader.py --to <笔记本ID> --file "C:\docs\ielts-prep.pdf"
-```
+</details>
 
 ---
 

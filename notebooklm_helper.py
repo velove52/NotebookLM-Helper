@@ -224,8 +224,13 @@ class NotebookLMClient:
                 # Retry request with valid token
                 response = self._send_rpc(rpc_id, params, source_path)
                 
-        # 智能诊断：只要响应中包含 Google 授权失效错误码 ["e", 4] 且不包含 rpc_id 结果体，即判定为凭证失效
-        if ('[["e",4' in response.text or '["e",4' in response.text) and f'"{rpc_id}"' not in response.text:
+        # 智能诊断：只要包含 Google 授权失效错误码 16 (Unauthenticated) 或会话彻底过期，即判定为凭证失效
+        is_unauthenticated = (
+            ',[16],"generic"' in response.text or
+            'null,null,null,[16]' in response.text or
+            (('[["e",4' in response.text or '["e",4' in response.text) and f'"{rpc_id}"' not in response.text)
+        )
+        if is_unauthenticated:
             print("\n❌ 身份凭证已失效（Google 会话已过期或已被注销）！")
             print("💡 请重新在 Chrome 浏览器中登录 NotebookLM，打开 F12 复制最新的 Cookie 并更新到 'cookie.txt' 中。")
             raise PermissionError("❌ Google 登录会话已过期或被注销，请更新 cookie.txt 中的 Cookie。")
@@ -372,7 +377,7 @@ class NotebookLMClient:
         for idx, sid in enumerate(source_ids, start=1):
             print(f"[{idx}/{total}] 正在删除文件 ID: {sid} ...", end="", flush=True)
             
-            args = json.dumps([[[sid]]])
+            args = json.dumps([[[sid]], [2]])
             response = self._execute_rpc_with_xsrf_retry(rpc_id, [args], source_path=source_path)
             
             if response.status_code == 200:

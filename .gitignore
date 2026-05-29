@@ -19,4 +19,8 @@ env/
 # Sensitive Configuration (NEVER COMMIT THIS)
 config.json
 cookie.txt
+rclone.conf
 .env
+
+# Temp download folder
+tmp/

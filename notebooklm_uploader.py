@@ -63,7 +63,11 @@ class NotebookLMUploaderClient:
         self.session = requests.Session()
         self.session.mount("https://", TLSAdapter())
         
+        self.rclone_path = os.path.join(script_dir, "rclone.conf")
+        self.rclone_config: Dict[str, str] = {}
+        
         self.load_config()
+        self.load_rclone_config()
 
     def _prune_cookie_string(self, cookie_string: str) -> str:
         """解析 Cookie 字符串，仅保留核心鉴权字段，缩减标头体积"""
@@ -156,6 +160,151 @@ class NotebookLMUploaderClient:
             "Referer": "https://notebooklm.google.com/",
             "Origin": "https://notebooklm.google.com"
         }
+
+    def load_rclone_config(self) -> None:
+        """从 rclone.conf 中读取 gdriver 配置"""
+        if os.path.exists(self.rclone_path):
+            import configparser
+            config = configparser.ConfigParser()
+            try:
+                config.read(self.rclone_path, encoding="utf-8")
+                if "gdriver" in config:
+                    self.rclone_config = dict(config["gdriver"])
+            except Exception as e:
+                print(f"⚠️ 读取 rclone.conf 失败: {e}")
+
+    def save_rclone_config(self) -> None:
+        """把更新后的 Token 写回 rclone.conf"""
+        if not os.path.exists(self.rclone_path):
+            return
+        import configparser
+        config = configparser.ConfigParser()
+        try:
+            config.read(self.rclone_path, encoding="utf-8")
+            if "gdriver" in config:
+                config["gdriver"]["token"] = self.rclone_config["token"]
+                with open(self.rclone_path, "w", encoding="utf-8") as f:
+                    config.write(f)
+        except Exception as e:
+            print(f"⚠️ 保存 rclone.conf 失败: {e}")
+
+    def refresh_gdrive_token(self) -> Optional[str]:
+        """使用 refresh_token 智能刷新 Google Drive access_token"""
+        if not self.rclone_config:
+            return None
+            
+        client_id = self.rclone_config.get("client_id")
+        client_secret = self.rclone_config.get("client_secret")
+        token_str = self.rclone_config.get("token")
+        
+        if not (client_id and client_secret and token_str):
+            return None
+            
+        try:
+            token_json = json.loads(token_str)
+            refresh_token = token_json.get("refresh_token")
+            if not refresh_token:
+                return token_json.get("access_token")
+                
+            # 发送刷新令牌请求
+            payload = {
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "refresh_token": refresh_token,
+                "grant_type": "refresh_token"
+            }
+            res = requests.post("https://oauth2.googleapis.com/token", data=payload, timeout=10)
+            if res.status_code == 200:
+                data = res.json()
+                new_access_token = data.get("access_token")
+                if new_access_token:
+                    token_json["access_token"] = new_access_token
+                    if "expires_in" in data:
+                        token_json["expiry"] = time.strftime('%Y-%m-%dT%H:%M:%S', time.localtime(time.time() + data["expires_in"]))
+                    self.rclone_config["token"] = json.dumps(token_json)
+                    self.save_rclone_config()
+                    return new_access_token
+            return token_json.get("access_token")
+        except Exception as e:
+            print(f"⚠️ 刷新 Google Drive Token 失败: {e}")
+            try:
+                return json.loads(token_str).get("access_token")
+            except:
+                return None
+
+    def list_gdrive_files(self, q: str = "trashed = false", page_token: Optional[str] = None) -> List[Dict[str, Any]]:
+        """列出 Google Drive 内的文件列表"""
+        access_token = self.refresh_gdrive_token()
+        if not access_token:
+            return []
+            
+        url = "https://www.googleapis.com/drive/v3/files"
+        headers = {
+            "Authorization": f"Bearer {access_token}"
+        }
+        params = {
+            "pageSize": 50,
+            "fields": "nextPageToken, files(id, name, mimeType, size)",
+            "q": q,
+            "orderBy": "folder, name"
+        }
+        if page_token:
+            params["pageToken"] = page_token
+            
+        try:
+            res = requests.get(url, headers=headers, params=params, verify=False, timeout=15)
+            if res.status_code == 200:
+                return res.json().get("files", [])
+            else:
+                print(f"❌ 获取网盘列表失败: {res.status_code} - {res.text}")
+        except Exception as e:
+            print(f"❌ 访问 Google Drive 发生异常: {e}")
+        return []
+
+    def download_gdrive_file(self, file_id: str, local_path: str) -> bool:
+        """从 Google Drive 下载二进制文件到本地临时路径"""
+        access_token = self.refresh_gdrive_token()
+        if not access_token:
+            return False
+            
+        url = f"https://www.googleapis.com/drive/v3/files/{file_id}"
+        headers = {
+            "Authorization": f"Bearer {access_token}"
+        }
+        
+        # 首先检查文件的大小，以便于进度显示
+        try:
+            meta_res = requests.get(url, headers=headers, params={"fields": "size,name"}, verify=False, timeout=10)
+            if meta_res.status_code != 200:
+                print(f"❌ 获取文件元数据失败: {meta_res.status_code}")
+                return False
+            meta = meta_res.json()
+            file_size = int(meta.get("size", 0))
+            file_name = meta.get("name", "downloaded_file")
+        except Exception as e:
+            print(f"⚠️ 无法获取文件大小: {e}")
+            file_size = 0
+            file_name = "downloaded_file"
+
+        print(f"⬇️ 正在从 Google Drive 下载 '{file_name}' ({file_size/1024/1024:.2f} MB) ...", end="", flush=True)
+        
+        download_url = f"{url}?alt=media"
+        try:
+            with requests.get(download_url, headers=headers, stream=True, verify=False, timeout=60) as r:
+                if r.status_code != 200:
+                    print(f" ❌ 下载失败 (HTTP {r.status_code})")
+                    return False
+                with open(local_path, "wb") as f:
+                    for chunk in r.iter_content(chunk_size=1024*1024):
+                        if chunk:
+                            f.write(chunk)
+            print(" ✅ 下载完成")
+            return True
+        except Exception as e:
+            print(f" ❌ 下载异常: {e}")
+            if os.path.exists(local_path):
+                os.remove(local_path)
+            return False
 
     def _send_rpc(self, rpc_id: str, params: list, source_path: str = "/") -> requests.Response:
         """发送 batchexecute 请求"""
@@ -365,6 +514,39 @@ class NotebookLMUploaderClient:
             except Exception:
                 continue
         return None
+
+    def parse_drive_url(self, url: str) -> tuple[Optional[str], Optional[str]]:
+        """从 Google Drive / Docs / Slides / Sheets 链接中自动解析出 File ID 和对应的 MIME 类型"""
+        url = url.strip()
+        # 1. 匹配 Docs: /document/d/<id>
+        doc_match = re.search(r'/document/d/([a-zA-Z0-9_-]+)', url)
+        if doc_match:
+            return doc_match.group(1), "application/vnd.google-apps.document"
+            
+        # 2. 匹配 Slides: /presentation/d/<id>
+        slides_match = re.search(r'/presentation/d/([a-zA-Z0-9_-]+)', url)
+        if slides_match:
+            return slides_match.group(1), "application/vnd.google-apps.presentation"
+            
+        # 3. 匹配 Sheets: /spreadsheets/d/<id>
+        sheets_match = re.search(r'/spreadsheets/d/([a-zA-Z0-9_-]+)', url)
+        if sheets_match:
+            return sheets_match.group(1), "application/vnd.google-apps.spreadsheet"
+            
+        # 4. 匹配通用 Drive 文件: /file/d/<id> 或 ?id=<id>
+        file_match = re.search(r'/file/d/([a-zA-Z0-9_-]+)', url)
+        if file_match:
+            return file_match.group(1), "application/pdf"
+            
+        open_match = re.search(r'[?&]id=([a-zA-Z0-9_-]+)', url)
+        if open_match:
+            return open_match.group(1), "application/pdf"
+            
+        # 如果长度符合典型 ID 长度，直接当作 ID 处理
+        if re.match(r'^[a-zA-Z0-9_-]{25,}$', url):
+            return url, None
+            
+        return None, None
 
     def add_source_drive(self, notebook_id: str, file_id: str, title: str, mime_type: str = "application/vnd.google-apps.document") -> Optional[str]:
         """添加 Google Drive 文件 (如 Google Docs, Slides, Sheets 或 Drive 中的 PDF)
@@ -590,7 +772,8 @@ def handle_interactive():
     print(" [1] 📄 上传本地文件 (PDF, Docx, TXT, MD, Mp3, PNG 等)")
     print(" [2] 🔗 添加网页链接 (Web URL / YouTube URL)")
     print(" [3] 📝 添加纯文本/复制文本 (Pasted Text)")
-    print(" [4] 🤖 添加 Google Drive 文件 (Google Docs, Slides, Sheets 或 Drive 中的 PDF)")
+    print(" [4] 🤖 粘贴 Google Drive 文件链接/ID (自动解析导入)")
+    print(" [5] ☁️ 浏览并选择 Google Drive 网盘文件 (直接从云盘导入)")
     
     type_input = input("请输入类型序号: ").strip()
     if type_input == "1":
@@ -629,29 +812,44 @@ def handle_interactive():
         else:
             print("❌ 失败")
     elif type_input == "4":
-        file_id = input("\n请输入 Google Drive 的文件 ID (File ID): ").strip()
-        if not file_id:
-            print("❌ 错误：文件 ID 不能为空。")
+        user_input = input("\n请输入 Google Drive 的文件链接 (URL) 或文件 ID (File ID): ").strip()
+        if not user_input:
+            print("❌ 错误：输入不能为空。")
             return
+            
+        file_id, mime_type = client.parse_drive_url(user_input)
+        if not file_id:
+            print("❌ 错误：无法从输入中解析出有效的 Google Drive 文件 ID，请检查链接或输入！")
+            return
+            
         title = input("请输入此源的显示标题 (Title): ").strip()
         if not title:
             print("❌ 错误：标题不能为空。")
             return
             
-        print("\n请选择 Google Drive 的文件类型:")
-        print(" [1] 📄 Google Docs (谷歌文档) - 默认")
-        print(" [2] 📊 Google Slides (幻灯片)")
-        print(" [3] 📈 Google Sheets (电子表格)")
-        print(" [4] 📕 PDF / 其他 Drive 内文件")
-        
-        mime_choice = input("请输入类型序号 [默认 1]: ").strip()
-        mime_map = {
-            "1": "application/vnd.google-apps.document",
-            "2": "application/vnd.google-apps.presentation",
-            "3": "application/vnd.google-apps.spreadsheet",
-            "4": "application/pdf"
-        }
-        mime_type = mime_map.get(mime_choice, "application/vnd.google-apps.document")
+        if mime_type:
+            friendly_names = {
+                "application/vnd.google-apps.document": "Google Docs (文档)",
+                "application/vnd.google-apps.presentation": "Google Slides (幻灯片)",
+                "application/vnd.google-apps.spreadsheet": "Google Sheets (表格)",
+                "application/pdf": "PDF/其他云盘文件"
+            }
+            print(f"✨ 自动检测到云盘文件类型: {friendly_names.get(mime_type, mime_type)}")
+        else:
+            print("\n请选择 Google Drive 的文件类型:")
+            print(" [1] 📄 Google Docs (谷歌文档) - 默认")
+            print(" [2] 📊 Google Slides (幻灯片)")
+            print(" [3] 📈 Google Sheets (电子表格)")
+            print(" [4] 📕 PDF / 其他 Drive 内文件")
+            
+            mime_choice = input("请输入类型序号 [默认 1]: ").strip()
+            mime_map = {
+                "1": "application/vnd.google-apps.document",
+                "2": "application/vnd.google-apps.presentation",
+                "3": "application/vnd.google-apps.spreadsheet",
+                "4": "application/pdf"
+            }
+            mime_type = mime_map.get(mime_choice, "application/vnd.google-apps.document")
         
         print(f"🤖 正在从 Google Drive 导入 '{title}' ... ", end="", flush=True)
         source_id = client.add_source_drive(notebook_id, file_id, title, mime_type)
@@ -659,6 +857,114 @@ def handle_interactive():
             print(f"✅ 成功! (ID: {source_id})")
         else:
             print("❌ 失败")
+    elif type_input == "5":
+        if not client.rclone_config:
+            print("\n❌ 未检测到有效的 'rclone.conf' 配置文件，请参照 README 在脚本目录下提供该文件！")
+            return
+            
+        print("\n☁️ 正在读取您的 Google Drive 网盘根目录 ...")
+        current_folder_id = "root"
+        folder_path = ["Root"]
+        folder_history = []  # 保存 [(folder_id, folder_name)]
+        
+        while True:
+            # 列出当前文件夹下的内容
+            q = f"'{current_folder_id}' in parents and trashed = false"
+            files = client.list_gdrive_files(q=q)
+            
+            print(f"\n📂 当前路径: {' / '.join(folder_path)}")
+            print("-" * 70)
+            if not files:
+                print("   (空文件夹)")
+            else:
+                for idx, f in enumerate(files, start=1):
+                    is_folder = f.get("mimeType") == "application/vnd.google-apps.folder"
+                    prefix = "📁 [文件夹]" if is_folder else "📄 [文件]"
+                    size_str = ""
+                    if not is_folder and "size" in f:
+                        size_mb = int(f["size"]) / 1024 / 1024
+                        size_str = f" ({size_mb:.2f} MB)"
+                    print(f"[{idx:2d}] {prefix} {f['name']}{size_str}")
+            
+            print("-" * 70)
+            back_idx = len(files) + 1
+            exit_idx = len(files) + 2
+            
+            if current_folder_id != "root":
+                print(f"[{back_idx:2d}] ⬅️ 返回上级目录")
+            print(f"[{exit_idx:2d}] ❌ 退出网盘浏览")
+            print("-" * 70)
+            
+            sel_input = input("请输入您要操作的序号: ").strip()
+            try:
+                sel = int(sel_input)
+                if sel == exit_idx:
+                    print("已退出网盘浏览。")
+                    return
+                elif current_folder_id != "root" and sel == back_idx:
+                    # 返回上级
+                    current_folder_id, folder_name = folder_history.pop()
+                    folder_path.pop()
+                    continue
+                elif 1 <= sel <= len(files):
+                    selected = files[sel - 1]
+                    is_folder = selected.get("mimeType") == "application/vnd.google-apps.folder"
+                    if is_folder:
+                        # 进入子文件夹
+                        folder_history.append((current_folder_id, folder_path[-1]))
+                        current_folder_id = selected["id"]
+                        folder_path.append(selected["name"])
+                        continue
+                    else:
+                        # 选中文件，开始导入！
+                        file_id = selected["id"]
+                        name = selected["name"]
+                        mime = selected["mimeType"]
+                        
+                        print(f"\n🎯 选中文件: '{name}'")
+                        confirm = input("确认导入该文件到当前 Notebook 吗？(Y/N) [默认 Y]: ").strip().lower()
+                        if confirm in ("n", "no"):
+                            continue
+                            
+                        # 区分云端原生格式（Google Docs, Slides, Sheets）与二进制文件（PDF/docx/mp3等）
+                        cloud_formats = {
+                            "application/vnd.google-apps.document",
+                            "application/vnd.google-apps.presentation",
+                            "application/vnd.google-apps.spreadsheet"
+                        }
+                        
+                        if mime in cloud_formats:
+                            print(f"🤖 检测到谷歌云端原生文档，正在直接触发云端导入...")
+                            source_id = client.add_source_drive(notebook_id, file_id, name, mime)
+                            if source_id:
+                                print(f"✅ 成功! (ID: {source_id})")
+                            else:
+                                print("❌ 导入失败")
+                        else:
+                            print(f"📥 检测到二进制文件，将自动执行 [云端下载 -> 流式直传] ...")
+                            # 创建临时文件
+                            temp_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tmp")
+                            os.makedirs(temp_dir, exist_ok=True)
+                            temp_path = os.path.join(temp_dir, name)
+                            
+                            success = client.download_gdrive_file(file_id, temp_path)
+                            if success:
+                                print(f"📤 正在启动 3-Step Resumable Upload 协议，流传到 NotebookLM...")
+                                source_id = client.upload_file(notebook_id, temp_path)
+                                if source_id:
+                                    print(f"✅ 上传导入成功! (ID: {source_id})")
+                                else:
+                                    print("❌ 传输阶段失败")
+                                # 删除临时文件
+                                if os.path.exists(temp_path):
+                                    os.remove(temp_path)
+                            else:
+                                print("❌ 下载阶段失败")
+                        return
+                else:
+                    print("❌ 输入序号超出有效范围，请重新输入。")
+            except ValueError:
+                print("❌ 格式不合法，请输入数字序号。")
     else:
         print("❌ 错误：无效的类型序号。")
 
@@ -715,9 +1021,14 @@ def main():
             print("❌ 失败")
             sys.exit(1)
     elif args.gdrive:
-        title = args.title or f"Drive Source {args.gdrive}"
+        file_id, detected_mime = client.parse_drive_url(args.gdrive)
+        if not file_id:
+            print("❌ 错误：无法从 --gdrive 参数中解析出有效的 Google Drive 文件 ID，请检查链接或输入！")
+            sys.exit(1)
+        mime_type = args.mime if args.mime != "application/vnd.google-apps.document" else (detected_mime or args.mime)
+        title = args.title or f"Drive Source {file_id}"
         print(f"🤖 正在从 Google Drive 导入 '{title}' ... ", end="", flush=True)
-        source_id = client.add_source_drive(notebook_id, args.gdrive, title, args.mime)
+        source_id = client.add_source_drive(notebook_id, file_id, title, mime_type)
         if source_id:
             print(f"✅ 成功! (ID: {source_id})")
         else:

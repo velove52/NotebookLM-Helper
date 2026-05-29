@@ -1,129 +1,142 @@
-# 📓 NotebookLM Helper
+# 📓 NotebookLM Helper & Automator
 
-An elegant, robust, and lightweight Python-based CLI tool to manage and batch-delete sources in your **Google NotebookLM** notebooks. Features automatic dynamic XSRF (CSRF) token acquisition, session self-healing, interactive notebook-selection menu, and sequential execution routing to bypass Google's backend transaction limits.
+<p align="center">
+  <img src="https://img.shields.io/badge/Python-3.8+-blue.svg?style=for-the-badge&logo=python&logoColor=white" alt="Python Version" />
+  <img src="https://img.shields.io/badge/Google%20NotebookLM-Reverse%20API-orange.svg?style=for-the-badge&logo=google&logoColor=white" alt="Google NotebookLM API" />
+  <img src="https://img.shields.io/badge/Google%20Drive-Rclone%20OAuth2-yellow.svg?style=for-the-badge&logo=googledrive&logoColor=white" alt="Google Drive integration" />
+  <img src="https://img.shields.io/badge/License-MIT-green.svg?style=for-the-badge" alt="License" />
+</p>
 
-一套优雅、稳健且轻量级的 Python 命令行工具，用于快速管理和批量删除 **Google NotebookLM** 笔记本中的文档源。具备笔记本交互式管理列表、XSRF (CSRF) 安全 Token 自动动态提取、会话自愈重试，以及顺序执行防事务锁死等机制。
+An elegant, highly robust, and professional reverse-engineered suite designed to automate and orchestrate **Google NotebookLM** operations. Supports dynamic XSRF self-healing, multi-source stream upload, full Google Drive OAuth2 synchronization, and automated cron-friendly pipeline reconstruction.
 
----
-
-## 🌟 Features / 功能特性
-
-- **Notebook Selection / 笔记本轻松选择**：Instantly lists all your notebooks. Select any notebook by index to manage its sources. / 自动获取并列出你的所有笔记本，支持输入序号轻松跨笔记本切换与管理。
-- **Bilingual CLI / 中英双语控制台**：Fully customizable interactive menu. / 支持全中文交互菜单。
-- **Batch Selection / 多选与全选**：Delete specific items by index (e.g., `1,3,5`), select all (`all`), or exit safely. / 键入多个序号（如 `1,3,5`）批量删除，或输入 `all` 一键全选清空。
-- **Super-Simple Credentials / 极简身份凭证加载**：
-  - **Option 1**: Directly paste your raw browser cookie string into a simple `cookie.txt` file. / **方法 1**: 直接创建 `cookie.txt` 粘贴你从浏览器复制的整段 Cookie 文本。
-  - **Option 2**: Configure it as a string `"cookie": "..."` or array inside `config.json`. / **方法 2**: 在 `config.json` 中以字符串或传统数组形式配置。
-- **Credential Safety / 安全隐私保障**：All credentials (`config.json`, `cookie.txt`) are dynamically ignored by `.gitignore` to prevent leaking your Google account on GitHub. / 敏感的 Cookies 及文件已被 `.gitignore` 自动忽略，100% 杜绝因提交代码导致泄露谷歌账号的风险。
-- **Dynamic XSRF Bypass / 自动突破 XSRF 防御**：Intercepts `400 Bad Request` and dynamically parses Google's short-lived XSRF token for smooth execution. / 智能捕获 400 校验阻断，动态解析并装载最新的 XSRF Token 并自动重试。
-- **Safe Transaction Locks / 分布式事务锁规避**：Iterates deletions sequentially, preventing Google's backend from returning strict transactional HTTP 400 errors. / 采用顺序式渐进删除，规避 Google 后端并发删除时引发的物理事务拦截锁。
+一套优雅、稳健且专业级逆向工程工具套件，专为 **Google NotebookLM** 的全自动同步与管理而生。完美支持动态 XSRF 自愈握手、多源流式上传、完整的 Google Drive OAuth2 网盘集成以及定时任务友好的一键重建流。
 
 ---
 
-## 🛠️ Setup & Usage / 安装与使用步骤
+## 🗺️ Quick Navigation / 快速导航
 
-### Step 1: Install Requirements / 步骤一：安装依赖项
-Ensure you have Python 3.7+ installed. Clone this repository and install requests:
-确保你已安装 Python 3.7+ 版本。安装 `requests` 库：
+- [🌐 English README](#-english-documentation)
+- [🇨🇳 中文说明文档](#-中文说明文档)
+
+---
+
+# 🌐 English Documentation
+
+## ✨ Key Features
+- **⚡ Bulletproof Session Self-Healing**: Automatically catches Google's strict validation checks. Seamlessly intercepts short-lived XSRF token expiry and auto-updates dynamically on the fly.
+- **🔄 Fail-Fast Invalidation Diagnostics**: Intercepts Google's cross-origin `["e", 4]` (Unauthorized) session errors, instantly halting failure cascades with clear, human-readable troubleshooting guidance.
+- **📂 Google Drive native OAuth2 integration**: Native integration with Google Drive (via OAuth2 / Rclone). Instantly syncs Google Docs/Slides/Sheets using server-side zero-traffic links, and streams binary files (PDF, docx, txt, etc.) using a 3-step Resumable Upload pipeline.
+- **📅 Dynamic Date-Based Ingestion (`sync_ielts.py`)**: Automatically scans custom backups (like `/openclaw`), detects the latest date-stamped folder, purges existing items inside NotebookLM, and rebuilds the corpus in one click.
+- **🔒 Fully Ignored Credentials**: Pre-configured Git configuration ensures sensitive files (`cookie.txt`, `rclone.conf`, `sync_ielts.py`) are strictly kept local and never pushed to public repositories.
+
+---
+
+## 🚀 Getting Started
+
+### 1. Requirements & Setup
+Clone the repository and install the standard networking dependencies:
 ```bash
-pip install requests
+pip install requests urllib3 configparser
 ```
 
-### Step 2: Paste Cookie / 步骤二：粘贴 Cookie (极简)
-- **The Easiest Way / 最简单方法**：
-  Create a file named `cookie.txt` in the project directory, and paste your raw browser `Cookie` header string directly inside it.
-  在项目根目录下创建一个名为 `cookie.txt` 的文件，直接粘贴从浏览器开发者工具（F12 -> 网络 Network）中复制的整段 `Cookie` 文本。
-- **Alternative Way / 备选方法**：
-  Rename `config.json.template` to `config.json` and fill out the `"cookie"` string property.
-  复制 `config.json.template` 并命名为 `config.json`，在其中的 `"cookie"` 字段中填入你的 Cookie 串。
+### 2. Quick Credentials Configuration
+To connect with Google Services, you need to provide your authentication details locally:
 
-### Step 3: Run the CLI Console / 步骤三：运行交互式控制台
-Start the script via your terminal:
-直接在终端或命令行中启动脚本：
+| File Name | Purpose | Configuration Method |
+| :--- | :--- | :--- |
+| **`cookie.txt`** | Authenticates NotebookLM | Log into [NotebookLM](https://notebooklm.google.com/), open **F12** ➡️ **Network**, copy the raw request `Cookie` header (or export cookie JSON list), and paste it directly into this file. |
+| **`rclone.conf`** | Connects to Google Drive | Place your Rclone config containing `[gdriver]` with valid client credentials and refresh token in the root folder. |
+
+---
+
+## 🎮 Execution Commands
+
+### A. One-Click Automated Sync (`sync_ielts.py`)
+Run the standalone cron-friendly reconstruction script. It completely clears the designated notebook, locates the latest backup inside your Google Drive, and uploads all learning files:
+```bash
+python sync_ielts.py
+```
+
+### B. Interactive Notebook Management Console (`notebooklm_helper.py`)
+Launch the terminal manager to view notebooks, search, or batch-delete sources:
 ```bash
 python notebooklm_helper.py
 ```
 
----
-
-## 🎮 How to Interact / 控制台操作指南
-
-Once launched, the console lists all your notebooks:
-启动后，控制台首先会列出你的所有笔记本：
-
-```text
-============================================================
-                  Google NotebookLM 笔记本选择菜单
-============================================================
-[ 1] 📓 机器学习研究资料
-     ID: 6fbc4156-647a-4453-8ad5-f6cc7008a6e8 (3 个文档源)
-------------------------------------------------------------
-[ 2] 📓 英语单词背诵库
-     ID: a8b9c1d2-3e4f-5a6b-7c8d-9e0f1a2b3c4d (12 个文档源)
-------------------------------------------------------------
-
-💡 操作指令说明:
- 1. 输入对应数字序号进入该笔记本进行管理与批量删除。
- 2. 输入 "exit" 退出程序。
-```
-
-Select a notebook to load its sources and perform bulk deletes:
-输入数字进入具体笔记本后，即可对文档源进行管理：
-
-```text
-============================================================
-       管理笔记本: 机器学习研究资料
-       ID: 6fbc4156-647a-4453-8ad5-f6cc7008a6e8
-============================================================
-[ 1] 📄 confusing-words.txt
-     ID: 12fe3c81-4f54-49a7-9b1f-99fa61345e04
-------------------------------------------------------------
-
-💡 操作指令说明:
- 1. 输入单个数字（例如: 3）选择删除该文件。
- 2. 输入多个数字并用英文逗号隔开（例如: 1,3,5）批量选择删除。
- 3. 输入 "all" 全选删除该笔记本下的所有文件。
- 4. 输入 "back" 返回上级笔记本选择菜单。
- 5. 输入 "exit" 退出程序。
-```
-
----
-
-## 🚀 Smart Source Uploader / 智能 Source 上传器 (`notebooklm_uploader.py`)
-
-We have added a powerful new uploader utility **`notebooklm_uploader.py`** to let you ingest files, web URLs, or plain text into your designated Google NotebookLM notebooks.
-我们全新加入了强大的上传工具 **`notebooklm_uploader.py`**，支持将本地文件、网页链接或纯文本极速导入指定的 Google NotebookLM 笔记本中。
-
-### Features / 核心功能
-1. **Interactive Wizard / 极简交互菜单**：If run without arguments, it lists all notebooks, guides you to select or create a notebook, choose a source type, and complete the upload in seconds. / 不带参数运行时，自动拉取笔记本列表，一步步引导你选择或新建笔记本、选择导入源类型，完成上传。
-2. **Command-Line Ingestion / 命令行脚本对接**：Ingest resources programmatically using simple shell commands. / 支持通过命令行参数直接调用，非常适合脚本自动化与工作流对接。
-3. **Resumable Uploads / 谷歌分块可恢复协议**：Upload large local files (PDFs, Word docs, Audios, Images, etc.) reliably via Google's 3-step Resumable Upload API. / 通过逆向出的 Google 3阶段 Resumable Upload 协议，支持上传 PDF、Word、音频、图片等各种本地大文件。
-
-### Usage / 导入指令示例
-
-#### 1. Interactive Mode / 极简保姆级交互模式
+### C. Direct CLI & Interactive Source Uploader (`notebooklm_uploader.py`)
+Upload any type of document either interactively or through direct shell execution:
 ```bash
+# Launch interactive helper
 python notebooklm_uploader.py
-```
 
-#### 2. Direct CLI Ingestion Mode / 命令行极速导入模式
-```bash
-# Upload a local PDF file / 上传本地 PDF 文件到指定笔记本
-python notebooklm_uploader.py --to <notebook-id> --file "C:\\path\\to\\document.pdf"
-
-# Add a Web URL / 导入网页链接到指定笔记本
+# Ingest a Web URL programmatically
 python notebooklm_uploader.py --to <notebook-id> --url "https://example.com/article"
 
-# Upload plain text / 导入纯文本数据源
-python notebooklm_uploader.py --to <notebook-id> --title "My Notes" --text "This is raw text content to ingest."
-
-# Ingest a Google Drive file (Google Docs, Slides, Sheets, PDF, etc.) / 导入 Google Drive 云端文件 (支持文档、幻灯片、表格、PDF)
-python notebooklm_uploader.py --to <notebook-id> --gdrive "<Google-Drive-File-ID>" --title "My Drive Doc" --mime "application/vnd.google-apps.document"
+# Stream-upload a local PDF file
+python notebooklm_uploader.py --to <notebook-id> --file "C:\docs\ielts-prep.pdf"
 ```
 
 ---
 
-## 📄 License / 开源协议
+# 🇨🇳 中文说明文档
 
-This project is open-source and licensed under the **MIT License**.
-本项目基于 **MIT 协议** 开源，欢迎提交 Issue 或 Pull Request 进行功能扩展与改进。
+## ✨ 核心特性
+- **⚡ 坚不可摧的 Session 自愈**: 自动捕获并突破 Google 严格的会话安全检查。当发生 XSRF Token 过期或 400 拦截时，自动完成动态刷新并静默重试。
+- **🔄 极速 Fail-Fast 凭证诊断**: 智能拦截 Google 跨域 `["e", 4]` (会话失效/注销) 错误。拒绝静默失败，在发生失效的第一时间中断运行，并给出最精准的保姆级排障提示。
+- **📂 谷歌网盘原生 OAuth2 对接**: 基于安全通道的 Google Drive 集成。可实现谷歌 Docs、Slides、Sheets 的“云端免流量秒挂载”，并对 PDF、Docx、Markdown 等二进制文件进行 3阶段流式流控上传。
+- **📅 智能日期备份定位与一键同步 (`sync_ielts.py`)**: 专为自动化场景打造。自动扫描云端网盘（如 `openclaw`）下的最新日期文件夹，智能清空目标笔记本，并秒级重构导入全部最新语料。
+- **🔒 绝对的隐私与配置安全**: 预置了极致安全的 Git 规则，所有敏感配置文件（如 `cookie.txt`、`rclone.conf`、个人专属的 `sync_ielts.py`）已被配置为自动忽略，**绝不会意外提交至公开 GitHub 仓库**。
+
+---
+
+## 🚀 极速上手
+
+### 1. 环境与依赖安装
+克隆本项目到本地后，安装标准的网络支持库：
+```bash
+pip install requests urllib3 configparser
+```
+
+### 2. 身份凭证快速配置
+为了能够访问您的谷歌服务，请在项目根目录下配置以下两个私有文件：
+
+| 配置文件名 | 用途 | 获取与配置方法 |
+| :--- | :--- | :--- |
+| **`cookie.txt`** | 鉴权 NotebookLM | 浏览器打开并登录 [Google NotebookLM](https://notebooklm.google.com/)，按 **F12** ➡️ **网络(Network)**，复制任意请求的标头 `Cookie` 字符串（或导出 Cookies JSON 数组），粘贴进该文件保存。 |
+| **`rclone.conf`** | 鉴权 Google Drive | 将包含有 `[gdriver]` 以及 OAuth2 的 `client_id`, `client_secret` 和 `refresh_token` 的 rclone 配置文件放入项目根目录。 |
+
+---
+
+## 🎮 自动化与运行命令
+
+### A. 一键全自动同步与重建 (`sync_ielts.py`)
+专门针对 IELTS 等定期学习资料更新设计的自动化同步脚本。自动清空云端旧数据，并在云端网盘锁定最新日期文件夹一键重构：
+```bash
+python sync_ielts.py
+```
+
+### B. 交互式笔记本管理控制台 (`notebooklm_helper.py`)
+启动保姆级中文控制台，管理并批量挑选删除指定的旧文档源：
+```bash
+python notebooklm_helper.py
+```
+
+### C. 命令行与交互式极速上传器 (`notebooklm_uploader.py`)
+支持手动选择或编写脚本调用导入：
+```bash
+# 启动图形向导式交互菜单
+python notebooklm_uploader.py
+
+# 脚本化导入网页文章
+python notebooklm_uploader.py --to <笔记本ID> --url "https://example.com/article"
+
+# 3阶段流式上传本地大文件/PDF/Markdown
+python notebooklm_uploader.py --to <笔记本ID> --file "C:\docs\ielts-prep.pdf"
+```
+
+---
+
+## 📄 MIT License / 开源协议
+
+This project is open-source and licensed under the **MIT License**.  
+本项目基于 **MIT 协议** 开放，随时欢迎提交 Issue 或拉取 Pull Request 进行升级！

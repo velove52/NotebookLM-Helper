@@ -342,7 +342,7 @@ class NotebookLMUploaderClient:
                 self.xsrf_token = match.group(1)
                 response = self._send_rpc(rpc_id, params, source_path)
                 
-        if ('[["e",4' in response.text or '["e",4' in response.text) and f'"{rpc_id}"' not in response.text:
+        if '[["e",4' in response.text or '["e",4' in response.text:
             print("\n❌ 身份凭证已失效（Google 会话已过期或已被注销）！")
             print("💡 请重新在浏览器中登录 NotebookLM 并更新 'cookie.txt'。")
             raise PermissionError("❌ Google 登录会话已过期或被注销，请更新 cookie.txt 中的 Cookie。")

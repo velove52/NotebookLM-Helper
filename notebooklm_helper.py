@@ -162,6 +162,14 @@ class NotebookLMClient:
                 "  2. 在 'config.json' 中添加 \"cookie\": \"你的浏览器 Cookie 字符串\"。\n"
                 "  3. 在 'config.json' 中填写 \"cookies\" 列表结构。"
             )
+            
+        # 智能诊断：判断是否缺失关键的 1PSIDTS / 3PSIDTS 核心鉴权字段
+        if "__Secure-1PSIDTS" not in self.cookie_header and "__Secure-3PSIDTS" not in self.cookie_header:
+            print("\n⚠️ 警报: 您的 Cookie 凭证中缺失了 Google 核心安全字段 '__Secure-1PSIDTS' 或 '__Secure-3PSIDTS'！")
+            print("💡 这通常是因为使用了一些第三方浏览器插件（如某些简易版 Cookie 导出工具）未能成功导出 HTTPOnly 或 Session 级别的 Cookie，")
+            print("   或者是您没有在真正的 'notebooklm.google.com' 页面本尊上提取。")
+            print("💡 终极推荐方法：请在 Chrome 中打开并登录 NotebookLM，按 F12 -> Network 标签，随便点一个网络请求（如 batchexecute），")
+            print("   在右侧 'Request Headers' 中直接手动复制整个 'Cookie:' 后面的整行长字符串，然后覆盖写入 cookie.txt 保存。这是最完整且 100% 成功的方法！\n")
         
         # Build standard HTTP headers simulating a legitimate browser request
         self.headers = {

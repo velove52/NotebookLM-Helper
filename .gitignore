@@ -25,3 +25,5 @@ sync_ielts.py
 
 # Temp download folder
 tmp/
+tmp/
+rclone_conf

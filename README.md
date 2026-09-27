@@ -37,6 +37,7 @@ An elegant, highly robust, and professional reverse-engineered suite designed to
   - 支持直接免流量挂载 **Google Drive** 中的云端原生 Docs 文档、Slides 幻灯片、Sheets 表格或大文件。
 - **⚡ 坚不可摧的 Session 鉴权自愈**: 
   - **XSRF 自动修复**: 自动捕获并突破 400 Bad Request 校验阻断，动态拦截最新的 XSRF Token 并静默重试。
+  - **🌐 双域名智能感知与自适应故障转移 (Failover)**: 深度兼容 Google 最新迁移的主域名 `notebook.google.com` 与旧域名 `notebooklm.google.com`。自动从 Cookie 解析凭证归属并在 401 鉴权未通过时在双域名间无缝回退自愈，彻底杜绝 Google 域名调整引发的 Cookie 误报失效。
   - **Fail-Fast 凭证诊断**: 遇到 Cookie 失效 (`["e", 4]`) 时立即中断执行，提供最精准的单点登录 (OSID) 页面排障提示。
 - **🔒 隐私配置安全**: 所有敏感配置文件（如 `cookie.txt`、`rclone.conf`）已被自动忽略，绝不泄漏您的谷歌账户。
 
@@ -55,7 +56,7 @@ pip install requests urllib3 configparser
 
 | 配置文件名 | 用途 | 获取与配置方法 |
 | :--- | :--- | :--- |
-| **`cookie.txt`** | 鉴权 NotebookLM | 浏览器打开并登录 [Google NotebookLM](https://notebooklm.google.com/)，按 **F12** ➡️ **网络(Network)**，复制任意请求的标头 `Cookie` 字符串（或导出 Cookies JSON 数组），粘贴进该文件保存。 |
+| **`cookie.txt`** | 鉴权 NotebookLM | 浏览器打开并登录 [Google NotebookLM](https://notebook.google.com/)（或旧入口 `notebooklm.google.com`），按 **F12** ➡️ **网络(Network)**，复制任意请求的标头 `Cookie` 字符串（或通过浏览器扩展直接导出 JSON 数组），粘贴进该文件保存。脚本会自动识别域名并适配。 |
 | **`rclone.conf`** | 鉴权 Google Drive | 将包含有 `[gdriver]` 以及 OAuth2 的 `client_id`, `client_secret` 和 `refresh_token` 的 rclone 配置文件放入项目根目录（仅在使用网盘导入时需要）。 |
 
 ---
@@ -143,6 +144,7 @@ python notebooklm_uploader.py --to <笔记本ID> --title "My Memo" --text "This 
   - Mounts **Google Drive** native documents (Docs, Slides, Sheets) with zero server bandwidth overhead.
 - **⚡ Bulletproof Session Self-Healing**: 
   - **XSRF Auto-Recovery**: Intercepts 400 validation locks, parses Google's short-lived XSRF token, and auto-retries dynamically.
+  - **🌐 Dual-Domain Auto-Adaptive & Failover**: Full compatibility with both Google's current `notebook.google.com` and legacy `notebooklm.google.com`. Automatically parses originating domain from cookie and seamlessly executes cross-domain failover retries upon encountering 401 unauthenticated errors.
   - **Fail-Fast OSID Diagnostics**: Stops execution immediately upon cookie expiry (`["e", 4]`), pointing out precise cross-origin OSID solutions.
 
 ---
@@ -160,7 +162,7 @@ Place these private credential files in the root directory (they are safely igno
 
 | File Name | Purpose | Configuration Method |
 | :--- | :--- | :--- |
-| **`cookie.txt`** | Authenticates NotebookLM | Log into [NotebookLM](https://notebooklm.google.com/), open **F12** ➡️ **Network**, copy the raw request `Cookie` header (or export cookie JSON list), and paste it directly into this file. |
+| **`cookie.txt`** | Authenticates NotebookLM | Log into [NotebookLM](https://notebook.google.com/) (or legacy `notebooklm.google.com`), open **F12** ➡️ **Network**, copy the raw request `Cookie` header (or export cookie JSON list), and paste it into this file. The client automatically discovers and adapts to the active domain. |
 | **`rclone.conf`** | Connects to Google Drive | Contains your Rclone `[gdriver]` OAuth2 refresh token credentials (only required for Google Drive ingestion). |
 
 ---

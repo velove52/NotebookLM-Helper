@@ -31,6 +31,10 @@ class TLSAdapter(HTTPAdapter):
         ctx = ssl.create_default_context()
         ctx.minimum_version = ssl.TLSVersion.TLSv1_2
         ctx.set_ciphers("DEFAULT:@SECLEVEL=1")
+        # [FIX] urllib3>=2.x raises "Cannot set verify_mode to CERT_NONE when
+        # check_hostname is enabled" because create_default_context() enables
+        # hostname checking. Disable it so verify=False can be applied.
+        ctx.check_hostname = False
         kwargs["ssl_context"] = ctx
         return super().init_poolmanager(*args, **kwargs)
 
@@ -55,6 +59,7 @@ class NotebookLMUploaderClient:
         self.config_path = os.path.join(script_dir, config_path)
         self.cookie_txt_path = os.path.join(script_dir, "cookie.txt")
         
+        self.domain: str = "notebook.google.com"
         self.base_query_params: str = ""
         self.cookie_header: str = ""
         self.headers: Dict[str, str] = {}
@@ -95,27 +100,47 @@ class NotebookLMUploaderClient:
         try:
             parsed = json.loads(raw_content)
             if isinstance(parsed, list):
-                pruned_list = []
+                # 自动从 Cookie 列表中探测有效域名
+                domains = [c.get("domain", "") for c in parsed if isinstance(c, dict)]
+                if any("notebooklm.google.com" in d for d in domains):
+                    self.domain = "notebooklm.google.com"
+                elif any("notebook.google.com" in d for d in domains):
+                    self.domain = "notebook.google.com"
+                
+                pruned_dict = {}
                 for c in parsed:
                     if isinstance(c, dict) and 'name' in c and 'value' in c:
-                        if c['name'] in self.ESSENTIAL_COOKIE_KEYS:
-                            pruned_list.append(f"{c['name']}={c['value']}")
-                return "; ".join(pruned_list)
+                        name = c['name']
+                        domain = c.get('domain', '')
+                        if name in self.ESSENTIAL_COOKIE_KEYS:
+                            # 优先保留带有 notebook 前缀的域名专属 Cookie（如专属 OSID）
+                            if name not in pruned_dict or 'notebook' in domain:
+                                pruned_dict[name] = c['value']
+                return "; ".join([f"{k}={v}" for k, v in pruned_dict.items()])
             elif isinstance(parsed, dict):
                 if "cookie" in parsed:
                     return self._parse_raw_cookie_or_json(str(parsed["cookie"]))
                 elif "cookies" in parsed and isinstance(parsed["cookies"], list):
-                    pruned_list = []
+                    pruned_dict = {}
                     for c in parsed["cookies"]:
                         if isinstance(c, dict) and 'name' in c and 'value' in c:
-                            if c['name'] in self.ESSENTIAL_COOKIE_KEYS:
-                                pruned_list.append(f"{c['name']}={c['value']}")
-                    return "; ".join(pruned_list)
+                            name = c['name']
+                            domain = c.get('domain', '')
+                            if name in self.ESSENTIAL_COOKIE_KEYS:
+                                if name not in pruned_dict or 'notebook' in domain:
+                                    pruned_dict[name] = c['value']
+                    return "; ".join([f"{k}={v}" for k, v in pruned_dict.items()])
                 else:
                     return "; ".join([f"{k}={v}" for k, v in parsed.items() if k in self.ESSENTIAL_COOKIE_KEYS])
         except json.JSONDecodeError:
             return self._prune_cookie_string(raw_content)
         return raw_content
+
+    def _set_domain(self, domain: str) -> None:
+        """动态更新请求的目标域名及标头"""
+        self.domain = domain
+        self.headers["Referer"] = f"https://{self.domain}/"
+        self.headers["Origin"] = f"https://{self.domain}"
 
     def load_config(self) -> None:
         """载入配置文件与凭证"""
@@ -127,6 +152,9 @@ class NotebookLMUploaderClient:
                 except Exception as e:
                     print(f"⚠️ 解析 config.json 失败: {e}，将尝试其他凭证。")
             
+        if "domain" in config and config["domain"]:
+            self.domain = config["domain"]
+
         self.base_query_params = config.get("base_query_params", "bl=boq_labs-tailwind-frontend_20260527.15_p0&hl=en&rt=c")
         
         if os.path.exists(self.cookie_txt_path):
@@ -152,7 +180,7 @@ class NotebookLMUploaderClient:
         if "__Secure-1PSIDTS" not in self.cookie_header and "__Secure-3PSIDTS" not in self.cookie_header:
             print("\n⚠️ 警报: 您的 Cookie 凭证中缺失了 Google 核心安全字段 '__Secure-1PSIDTS' 或 '__Secure-3PSIDTS'！")
             print("💡 这通常是因为使用了一些第三方浏览器插件（如某些简易版 Cookie 导出工具）未能成功导出 HTTPOnly 或 Session 级别的 Cookie，")
-            print("   或者是您没有在真正的 'notebooklm.google.com' 页面本尊上提取。")
+            print("   或者是您没有在真正的 'notebooklm.google.com' 或 'notebook.google.com' 页面本尊上提取。")
             print("💡 终极推荐方法：请在 Chrome 中打开并登录 NotebookLM，按 F12 -> Network 标签，随便点一个网络请求（如 batchexecute），")
             print("   在右侧 'Request Headers' 中直接手动复制整个 'Cookie:' 后面的整行长字符串，然后覆盖写入 cookie.txt 保存。这是最完整且 100% 成功的方法！\n")
         
@@ -165,8 +193,8 @@ class NotebookLMUploaderClient:
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
                 "Chrome/120.0.0.0 Safari/537.36"
             ),
-            "Referer": "https://notebooklm.google.com/",
-            "Origin": "https://notebooklm.google.com"
+            "Referer": f"https://{self.domain}/",
+            "Origin": f"https://{self.domain}"
         }
 
     def load_rclone_config(self) -> None:
@@ -317,7 +345,7 @@ class NotebookLMUploaderClient:
     def _send_rpc(self, rpc_id: str, params: list, source_path: str = "/") -> requests.Response:
         """发送 batchexecute 请求"""
         url = (
-            f"https://notebooklm.google.com/_/LabsTailwindUi/data/batchexecute"
+            f"https://{self.domain}/_/LabsTailwindUi/data/batchexecute"
             f"?rpcids={rpc_id}"
             f"&source-path={source_path}"
             f"&{self.base_query_params}"
@@ -341,9 +369,28 @@ class NotebookLMUploaderClient:
         raise last_err
 
     def _execute_rpc_with_xsrf_retry(self, rpc_id: str, params: list, source_path: str = "/") -> requests.Response:
-        """发送 RPC 请求并在 XSRF 过期时进行重试自愈"""
+        """发送 RPC 请求并在 XSRF 过期时进行重试自愈，支持多域名自动平滑切换"""
         response = self._send_rpc(rpc_id, params, source_path)
         
+        def _check_unauth(res: requests.Response) -> bool:
+            return (
+                res.status_code == 401 or
+                ',[16],"generic"' in res.text or
+                'null,null,null,[16]' in res.text or
+                (('[["e",4' in res.text or '["e",4' in res.text) and f'"{rpc_id}"' not in res.text)
+            )
+
+        # 智能自愈：若当前域名返回未认证错误，尝试自动切换至备选域名（notebook.google.com <=> notebooklm.google.com）
+        if _check_unauth(response):
+            alt_domain = "notebooklm.google.com" if "notebooklm" not in self.domain else "notebook.google.com"
+            prev_domain = self.domain
+            self._set_domain(alt_domain)
+            alt_response = self._send_rpc(rpc_id, params, source_path)
+            if not _check_unauth(alt_response):
+                response = alt_response
+            else:
+                self._set_domain(prev_domain)
+
         if response.status_code == 400:
             match = re.search(r'"xsrf"\s*,\s*"([^"]+)"', response.text)
             if match:
@@ -351,12 +398,7 @@ class NotebookLMUploaderClient:
                 response = self._send_rpc(rpc_id, params, source_path)
                 
         # 智能诊断：只要包含 Google 授权失效错误码 16 (Unauthenticated) 或会话彻底过期，即判定为凭证失效
-        is_unauthenticated = (
-            ',[16],"generic"' in response.text or
-            'null,null,null,[16]' in response.text or
-            (('[["e",4' in response.text or '["e",4' in response.text) and f'"{rpc_id}"' not in response.text)
-        )
-        if is_unauthenticated:
+        if _check_unauth(response):
             print("\n❌ 身份凭证已失效（Google 会话已过期或已被注销）！")
             print("💡 请重新在浏览器中登录 NotebookLM 并更新 'cookie.txt'。")
             raise PermissionError("❌ Google 登录会话已过期或被注销，请更新 cookie.txt 中的 Cookie。")
@@ -661,7 +703,7 @@ class NotebookLMUploaderClient:
         print(f" ✅ 成功 (ID: {source_id})")
         
         # Step 2: 握手创建 resumable upload 会话通道
-        upload_url_init = "https://notebooklm.google.com/upload/_/?authuser=0"
+        upload_url_init = f"https://{self.domain}/upload/_/?authuser=0"
         upload_meta = json.dumps({
             "PROJECT_ID": notebook_id,
             "SOURCE_NAME": filename,
@@ -670,8 +712,8 @@ class NotebookLMUploaderClient:
         
         headers = {
             "Content-Type": "application/x-www-form-urlencoded;charset=UTF-8",
-            "Origin": "https://notebooklm.google.com",
-            "Referer": "https://notebooklm.google.com/",
+            "Origin": f"https://{self.domain}",
+            "Referer": f"https://{self.domain}/",
             "User-Agent": self.headers["User-Agent"],
             "Cookie": self.cookie_header,
             "x-goog-authuser": "0",
@@ -701,8 +743,8 @@ class NotebookLMUploaderClient:
         upload_headers = {
             "Content-Type": "application/x-www-form-urlencoded;charset=utf-8",
             "Content-Length": str(file_size),
-            "Origin": "https://notebooklm.google.com",
-            "Referer": "https://notebooklm.google.com/",
+            "Origin": f"https://{self.domain}",
+            "Referer": f"https://{self.domain}/",
             "User-Agent": self.headers["User-Agent"],
             "Cookie": self.cookie_header,
             "x-goog-authuser": "0",
